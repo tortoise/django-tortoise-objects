@@ -1,0 +1,30 @@
+[project]
+name = "django-tortoise-example"
+version = "0.1.0"
+description = "Example project and benchmarks for django-tortoise-objects"
+requires-python = ">=3.10"
+dependencies = [
+    "django>=4.2",
+    "django-tortoise-objects[sqlite,pg]",
+    "tortoise-orm>=1.1.2",
+    "matplotlib>=3.10.8",
+    "psycopg[binary]>=3.1",
+    "uvicorn[standard]>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-django>=4.5",
+    "pytest-asyncio>=0.21",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["example_project", "demo", "benchmarks"]
+
+[tool.uv.sources]
+django-tortoise-objects = { path = "..", editable = true }
