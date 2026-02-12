@@ -1,0 +1,39 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Lint
+        run: |
+          uv run ruff check django_tortoise/ tests/
+          uv run ruff format --check django_tortoise/ tests/
+      - name: Test
+        run: uv run pytest tests/ -v
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - name: Build package
+        run: uv build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
