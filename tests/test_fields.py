@@ -11,7 +11,7 @@ import enum
 from tortoise import fields as tf
 from tortoise.fields.data import CharEnumFieldInstance, IntEnumFieldInstance
 
-from django_tortoise.fields import FIELD_MAP, convert_field
+from django_tortoise.fields import FIELD_MAP, convert_field, resolve_internal_type
 from django_tortoise.introspection import FieldInfo
 
 
@@ -409,3 +409,83 @@ class TestUnsupportedField:
             result = convert_field(info)
         assert result is None
         assert "Unsupported" in caplog.text
+
+
+class TestMROFallback:
+    """MRO-based fallback resolves custom Django field subclasses."""
+
+    def test_custom_field_mro_fallback_to_char_field(self):
+        """Custom CharField subclass resolves via MRO fallback."""
+        from django.db import models as django_models
+
+        class CustomIDField(django_models.CharField):
+            def get_internal_type(self):
+                return "CustomIDField"
+
+        django_field = CustomIDField(max_length=36)
+        info = _make_field_info(
+            name="custom_id",
+            internal_type="CustomIDField",
+            max_length=36,
+            primary_key=True,
+            django_field=django_field,
+        )
+        result = convert_field(info)
+        assert result is not None
+        assert isinstance(result, tf.CharField)
+
+    def test_custom_field_mro_fallback_to_integer_field(self):
+        """Custom IntegerField subclass resolves via MRO fallback."""
+        from django.db import models as django_models
+
+        class CustomIntField(django_models.IntegerField):
+            def get_internal_type(self):
+                return "CustomIntField"
+
+        django_field = CustomIntField()
+        info = _make_field_info(
+            name="custom_int",
+            internal_type="CustomIntField",
+            django_field=django_field,
+        )
+        result = convert_field(info)
+        assert result is not None
+        assert isinstance(result, tf.IntField)
+
+    def test_custom_field_no_django_field_returns_none(self):
+        """FieldInfo with unknown type and django_field=None returns None."""
+        info = _make_field_info(
+            internal_type="CustomUnknownField",
+            django_field=None,
+        )
+        result = convert_field(info)
+        assert result is None
+
+    def test_deeply_nested_custom_field(self):
+        """GrandchildField(ChildField(CharField)) resolves to CharField."""
+        from django.db import models as django_models
+
+        class ChildField(django_models.CharField):
+            def get_internal_type(self):
+                return "ChildField"
+
+        class GrandchildField(ChildField):
+            def get_internal_type(self):
+                return "GrandchildField"
+
+        django_field = GrandchildField(max_length=100)
+        info = _make_field_info(
+            name="grandchild",
+            internal_type="GrandchildField",
+            max_length=100,
+            django_field=django_field,
+        )
+        result = convert_field(info)
+        assert result is not None
+        assert isinstance(result, tf.CharField)
+
+    def test_resolve_internal_type_direct_match_returns_immediately(self):
+        """Known type like 'CharField' returns 'CharField' without MRO walk."""
+        info = _make_field_info(internal_type="CharField")
+        result = resolve_internal_type(info, FIELD_MAP)
+        assert result == "CharField"

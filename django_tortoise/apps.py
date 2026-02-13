@@ -73,6 +73,7 @@ class DjangoTortoiseConfig(AppConfig):
         for django_model, label, model_info in eligible:
             tortoise_model = generate_tortoise_model_full(model_info, class_name_map=class_name_map)
             if tortoise_model is None:
+                class_name_map.pop(django_model, None)
                 skipped_count += 1
                 continue
 

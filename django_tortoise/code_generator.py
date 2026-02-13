@@ -16,7 +16,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from django_tortoise.fields import ON_DELETE_MAP
+from django_tortoise.fields import ON_DELETE_MAP, resolve_internal_type
 from django_tortoise.introspection import FieldInfo, ModelInfo
 
 logger = logging.getLogger("django_tortoise")
@@ -402,14 +402,15 @@ def render_field_source(field_info: FieldInfo) -> str | None:
 
     Returns ``None`` if no renderer is registered for the field's internal_type.
     """
-    renderer = SOURCE_FIELD_MAP.get(field_info.internal_type)
-    if renderer is None:
+    resolved_type = resolve_internal_type(field_info, SOURCE_FIELD_MAP)
+    if resolved_type is None:
         logger.warning(
             "Unsupported Django field type '%s' on field '%s'. Skipping.",
             field_info.internal_type,
             field_info.name,
         )
         return None
+    renderer = SOURCE_FIELD_MAP[resolved_type]
     return renderer(field_info)
 
 

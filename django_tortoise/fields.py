@@ -66,6 +66,50 @@ def _common_kwargs(field_info: FieldInfo) -> dict[str, Any]:
     return kwargs
 
 
+def resolve_internal_type(field_info: FieldInfo, field_map: dict[str, Any]) -> str | None:
+    """
+    Resolve a Django field's internal type to a known key in *field_map*.
+
+    If ``field_info.internal_type`` is already present in *field_map*, it is
+    returned immediately.  Otherwise, when ``field_info.django_field`` is
+    available, the function walks the Django field class's MRO looking for
+    an ancestor whose ``__name__`` is a key in *field_map*.
+
+    Returns ``None`` when no match is found (or when ``django_field`` is
+    ``None`` and the type is unknown).
+    """
+    import django.db.models
+
+    if field_info.internal_type in field_map:
+        return field_info.internal_type
+
+    if field_info.django_field is None:
+        return None
+
+    field_cls = type(field_info.django_field)
+    for ancestor in field_cls.__mro__:
+        # Skip the leaf class itself (already tried via internal_type).
+        if ancestor is field_cls:
+            continue
+        # Skip django.db.models.Field (returns self.__class__.__name__,
+        # which would give the leaf class name again).
+        if ancestor is django.db.models.Field:
+            continue
+        # Skip object.
+        if ancestor is object:
+            continue
+        if ancestor.__name__ in field_map:
+            logger.debug(
+                "Custom field type '%s' on '%s' resolved to '%s' via MRO fallback.",
+                field_info.internal_type,
+                field_info.name,
+                ancestor.__name__,
+            )
+            return ancestor.__name__
+
+    return None
+
+
 def convert_field(field_info: FieldInfo) -> tortoise_fields.Field | None:
     """
     Convert a FieldInfo to a Tortoise field instance.
@@ -73,14 +117,15 @@ def convert_field(field_info: FieldInfo) -> tortoise_fields.Field | None:
     Returns None if no converter is registered for the field's internal_type,
     logging a warning in that case.
     """
-    converter = FIELD_MAP.get(field_info.internal_type)
-    if converter is None:
+    resolved_type = resolve_internal_type(field_info, FIELD_MAP)
+    if resolved_type is None:
         logger.warning(
             "Unsupported Django field type '%s' on field '%s'. Skipping.",
             field_info.internal_type,
             field_info.name,
         )
         return None
+    converter = FIELD_MAP[resolved_type]
     return converter(field_info)
 
 

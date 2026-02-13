@@ -83,8 +83,10 @@ class Command(BaseCommand):
         models_by_app = defaultdict(list)
         for _django_model, _label, model_info in eligible:
             result = render_model_source(model_info, tortoise_app_name, class_name_map)
-            if result is not None:
-                models_by_app[model_info.app_label].append(result)
+            if result is None:
+                class_name_map.pop(model_info.model_class, None)
+                continue
+            models_by_app[model_info.app_label].append(result)
 
         # Create output directory if needed
         os.makedirs(output_dir, exist_ok=True)

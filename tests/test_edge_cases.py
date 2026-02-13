@@ -210,3 +210,376 @@ class TestSourceFieldMapping:
         info = _make_field_info(internal_type="CharField", name="title", column="title")
         kwargs = _common_kwargs(info)
         assert "source_field" not in kwargs
+
+
+class TestClassNameMapCleanup:
+    """Tests for class_name_map cleanup on generation failure."""
+
+    def test_class_name_map_cleaned_on_generation_failure(self):
+        """When a model fails generation, it is removed from class_name_map
+        so FK references from other models are gracefully skipped."""
+        from django_tortoise.generator import generate_tortoise_model_full
+
+        class _ModelA:
+            __name__ = "ModelA"
+            __module__ = "tests.testapp.models"
+
+        class _ModelB:
+            __name__ = "ModelB"
+            __module__ = "tests.testapp.models"
+
+        # ModelA has only an unsupported field (no django_field, so MRO cannot help)
+        fi_a = _make_field_info(
+            name="weird_pk",
+            internal_type="UnsupportedTypeXYZ",
+            column="weird_pk",
+            primary_key=True,
+            django_field=None,
+        )
+        model_info_a = ModelInfo(
+            model_class=_ModelA,
+            app_label="test",
+            model_name="modela",
+            db_table="test_modela",
+            fields=[fi_a],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="weird_pk",
+        )
+
+        # ModelB has a valid PK + FK to ModelA
+        fi_b_pk = _make_field_info(
+            name="id",
+            internal_type="BigAutoField",
+            column="id",
+            primary_key=True,
+        )
+        fi_b_fk = _make_field_info(
+            name="ref",
+            internal_type="ForeignKey",
+            column="ref_id",
+            is_relation=True,
+            related_model=_ModelA,
+            related_model_label="test.ModelA",
+            on_delete="CASCADE",
+        )
+        model_info_b = ModelInfo(
+            model_class=_ModelB,
+            app_label="test",
+            model_name="modelb",
+            db_table="test_modelb",
+            fields=[fi_b_pk, fi_b_fk],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="id",
+        )
+
+        class_name_map = {
+            _ModelA: "ModelATortoise",
+            _ModelB: "ModelBTortoise",
+        }
+
+        # ModelA generation fails (returns None)
+        result_a = generate_tortoise_model_full(model_info_a, class_name_map=class_name_map)
+        assert result_a is None
+
+        # Remove ModelA from class_name_map (simulating what apps.py does)
+        class_name_map.pop(_ModelA, None)
+
+        # ModelB generation should succeed; FK to ModelA is gracefully skipped
+        result_b = generate_tortoise_model_full(model_info_b, class_name_map=class_name_map)
+        assert result_b is not None
+
+    def test_class_name_map_cleaned_in_code_generator(self):
+        """Same cleanup pattern for the code generator path."""
+        from django_tortoise.code_generator import render_model_source
+
+        class _ModelA:
+            __name__ = "ModelA"
+            __module__ = "tests.testapp.models"
+
+        class _ModelB:
+            __name__ = "ModelB"
+            __module__ = "tests.testapp.models"
+
+        # ModelA has only an unsupported field
+        fi_a = _make_field_info(
+            name="weird_pk",
+            internal_type="UnsupportedTypeXYZ",
+            column="weird_pk",
+            primary_key=True,
+            django_field=None,
+        )
+        model_info_a = ModelInfo(
+            model_class=_ModelA,
+            app_label="test",
+            model_name="modela",
+            db_table="test_modela",
+            fields=[fi_a],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="weird_pk",
+        )
+
+        # ModelB has a valid PK + FK to ModelA
+        fi_b_pk = _make_field_info(
+            name="id",
+            internal_type="BigAutoField",
+            column="id",
+            primary_key=True,
+        )
+        fi_b_fk = _make_field_info(
+            name="ref",
+            internal_type="ForeignKey",
+            column="ref_id",
+            is_relation=True,
+            related_model=_ModelA,
+            related_model_label="test.ModelA",
+            on_delete="CASCADE",
+        )
+        model_info_b = ModelInfo(
+            model_class=_ModelB,
+            app_label="test",
+            model_name="modelb",
+            db_table="test_modelb",
+            fields=[fi_b_pk, fi_b_fk],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="id",
+        )
+
+        class_name_map = {
+            _ModelA: "ModelATortoise",
+            _ModelB: "ModelBTortoise",
+        }
+
+        # ModelA render fails (returns None)
+        result_a = render_model_source(model_info_a, "django_tortoise", class_name_map)
+        assert result_a is None
+
+        # Remove ModelA from class_name_map (simulating what generate_tortoise_models does)
+        class_name_map.pop(_ModelA, None)
+
+        # ModelB render should succeed; FK to ModelA is gracefully skipped
+        result_b = render_model_source(model_info_b, "django_tortoise", class_name_map)
+        assert result_b is not None
+
+
+class TestCustomFieldMROIntegration:
+    """End-to-end integration tests with real Django custom field subclasses."""
+
+    def test_convert_field_with_custom_pk(self):
+        """convert_field succeeds for a custom CharField PK."""
+        from django.db import models as django_models
+        from tortoise import fields as tf
+
+        class CustomIDField(django_models.CharField):
+            def get_internal_type(self):
+                return "CustomIDField"
+
+        django_field = CustomIDField(max_length=36)
+        info = _make_field_info(
+            name="id",
+            internal_type="CustomIDField",
+            column="id",
+            max_length=36,
+            primary_key=True,
+            django_field=django_field,
+        )
+        result = convert_field(info)
+        assert result is not None
+        assert isinstance(result, tf.CharField)
+        assert result.pk is True
+
+    def test_render_field_source_with_custom_pk(self):
+        """render_field_source succeeds for a custom CharField PK."""
+        from django.db import models as django_models
+
+        from django_tortoise.code_generator import render_field_source
+
+        class CustomIDField(django_models.CharField):
+            def get_internal_type(self):
+                return "CustomIDField"
+
+        django_field = CustomIDField(max_length=36)
+        info = _make_field_info(
+            name="id",
+            internal_type="CustomIDField",
+            column="id",
+            max_length=36,
+            primary_key=True,
+            django_field=django_field,
+        )
+        result = render_field_source(info)
+        assert result is not None
+        assert "fields.CharField(" in result
+
+    def test_generate_tortoise_model_full_with_custom_pk(self):
+        """generate_tortoise_model_full returns a valid model for custom PK."""
+        from django.db import models as django_models
+
+        from django_tortoise.generator import generate_tortoise_model_full
+
+        class CustomIDField(django_models.CharField):
+            def get_internal_type(self):
+                return "CustomIDField"
+
+        django_field = CustomIDField(max_length=36)
+        fi = _make_field_info(
+            name="id",
+            internal_type="CustomIDField",
+            column="id",
+            max_length=36,
+            primary_key=True,
+            django_field=django_field,
+        )
+
+        class CustomPKModel:
+            __module__ = "tests.testapp.models"
+
+        model_info = ModelInfo(
+            model_class=CustomPKModel,
+            app_label="test",
+            model_name="custompkmodel",
+            db_table="test_custompkmodel",
+            fields=[fi],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="id",
+        )
+        result = generate_tortoise_model_full(model_info)
+        assert result is not None
+        assert result.__name__ == "CustomPKModelTortoise"
+
+    def test_render_model_source_with_custom_pk(self):
+        """render_model_source returns a valid ModelSourceResult for custom PK."""
+        from django.db import models as django_models
+
+        from django_tortoise.code_generator import ModelSourceResult, render_model_source
+
+        class CustomIDField(django_models.CharField):
+            def get_internal_type(self):
+                return "CustomIDField"
+
+        django_field = CustomIDField(max_length=36)
+        fi = _make_field_info(
+            name="id",
+            internal_type="CustomIDField",
+            column="id",
+            max_length=36,
+            primary_key=True,
+            django_field=django_field,
+        )
+
+        class CustomPKModel:
+            __module__ = "tests.testapp.models"
+
+        model_info = ModelInfo(
+            model_class=CustomPKModel,
+            app_label="test",
+            model_name="custompkmodel",
+            db_table="test_custompkmodel",
+            fields=[fi],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="id",
+        )
+        result = render_model_source(model_info, "django_tortoise", {})
+        assert result is not None
+        assert isinstance(result, ModelSourceResult)
+        assert "fields.CharField(" in result.source
+
+    def test_custom_pk_model_with_fk_from_another_model(self):
+        """ModelA with custom PK + ModelB with FK to ModelA both generate correctly."""
+        from django.db import models as django_models
+
+        from django_tortoise.generator import generate_tortoise_model_full
+
+        class CustomIDField(django_models.CharField):
+            def get_internal_type(self):
+                return "CustomIDField"
+
+        class ModelA:
+            __module__ = "tests.testapp.models"
+
+        class ModelB:
+            __module__ = "tests.testapp.models"
+
+        # ModelA: only field is CustomIDField PK
+        django_field_a = CustomIDField(max_length=36)
+        fi_a = _make_field_info(
+            name="id",
+            internal_type="CustomIDField",
+            column="id",
+            max_length=36,
+            primary_key=True,
+            django_field=django_field_a,
+        )
+        model_info_a = ModelInfo(
+            model_class=ModelA,
+            app_label="test",
+            model_name="modela",
+            db_table="test_modela",
+            fields=[fi_a],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="id",
+        )
+
+        # ModelB: BigAutoField PK + FK to ModelA
+        fi_b_pk = _make_field_info(
+            name="id",
+            internal_type="BigAutoField",
+            column="id",
+            primary_key=True,
+        )
+        fi_b_fk = _make_field_info(
+            name="ref",
+            internal_type="ForeignKey",
+            column="ref_id",
+            is_relation=True,
+            related_model=ModelA,
+            related_model_label="test.ModelA",
+            on_delete="CASCADE",
+        )
+        model_info_b = ModelInfo(
+            model_class=ModelB,
+            app_label="test",
+            model_name="modelb",
+            db_table="test_modelb",
+            fields=[fi_b_pk, fi_b_fk],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="id",
+        )
+
+        class_name_map = {
+            ModelA: "ModelATortoise",
+            ModelB: "ModelBTortoise",
+        }
+
+        # ModelA generates successfully (custom PK resolved via MRO)
+        result_a = generate_tortoise_model_full(model_info_a, class_name_map=class_name_map)
+        assert result_a is not None
+        assert result_a.__name__ == "ModelATortoise"
+
+        # ModelB generates successfully with FK to ModelA
+        result_b = generate_tortoise_model_full(model_info_b, class_name_map=class_name_map)
+        assert result_b is not None
+        assert result_b.__name__ == "ModelBTortoise"

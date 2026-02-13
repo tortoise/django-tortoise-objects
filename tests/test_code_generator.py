@@ -945,3 +945,81 @@ class TestEdgeCases:
         assert result is not None
         _, source = result
         assert "OnDelete.NO_ACTION" in source
+
+
+# ---------------------------------------------------------------------------
+# MRO fallback tests for render_field_source
+# ---------------------------------------------------------------------------
+
+
+class TestRenderFieldSourceMROFallback:
+    """MRO fallback resolves custom field types in source rendering."""
+
+    def test_render_field_source_custom_field_mro_fallback(self):
+        """Custom CharField subclass resolves via MRO in source rendering."""
+        from django.db import models as django_models
+
+        class CustomIDField(django_models.CharField):
+            def get_internal_type(self):
+                return "CustomIDField"
+
+        django_field = CustomIDField(max_length=36)
+        info = _make_field_info(
+            name="custom_id",
+            internal_type="CustomIDField",
+            max_length=36,
+            primary_key=True,
+            django_field=django_field,
+        )
+        result = render_field_source(info)
+        assert result is not None
+        assert "fields.CharField(" in result
+
+    def test_render_field_source_custom_field_no_django_field(self):
+        """Unknown type with django_field=None returns None in source rendering."""
+        info = _make_field_info(
+            internal_type="CustomUnknownField",
+            django_field=None,
+        )
+        result = render_field_source(info)
+        assert result is None
+
+    def test_render_model_source_with_custom_pk_field(self):
+        """Model with custom PK field generates valid ModelSourceResult."""
+        from django.db import models as django_models
+
+        class CustomIDField(django_models.CharField):
+            def get_internal_type(self):
+                return "CustomIDField"
+
+        django_field = CustomIDField(max_length=36)
+
+        fi = _make_field_info(
+            name="id",
+            internal_type="CustomIDField",
+            column="id",
+            max_length=36,
+            primary_key=True,
+            django_field=django_field,
+        )
+
+        class _DummyModel:
+            __name__ = "CustomPKModel"
+            __module__ = "tests.testapp.models"
+
+        model_info = ModelInfo(
+            model_class=_DummyModel,
+            app_label="test",
+            model_name="custompkmodel",
+            db_table="test_custompkmodel",
+            fields=[fi],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="id",
+        )
+        result = render_model_source(model_info, "django_tortoise", {})
+        assert result is not None
+        assert isinstance(result, ModelSourceResult)
+        assert "fields.CharField(" in result.source

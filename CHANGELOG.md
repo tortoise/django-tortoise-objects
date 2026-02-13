@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## 0.1.2
+
+### Fixed
+
+- Custom Django field types (e.g. `CustomIDField(CharField)`) are now resolved
+  via MRO fallback when their `get_internal_type()` returns a name not in the
+  field map. The library walks the field's ancestor classes to find a supported
+  parent type, so models with custom primary key fields no longer lose their
+  only data field and fail silently.
+- Fixed `KeyError` / `ConnectionError` during Tortoise ORM initialization when
+  a model with only unsupported fields was referenced by ForeignKey from another
+  model. Failed models are now removed from the internal class name map so
+  downstream FK references are gracefully skipped instead of crashing.
+
 ## 0.1.1
 
 ### Fixed
