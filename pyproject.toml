@@ -1,6 +1,6 @@
 [project]
 name = "django-tortoise-objects"
-version = "0.1.0"
+version = "0.1.1"
 description = "Bridge Django ORM models to Tortoise ORM for truly async database access"
 readme = "README.md"
 license = {text = "Apache-2.0"}
