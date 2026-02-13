@@ -40,16 +40,17 @@ def _common_kwargs(field_info: FieldInfo) -> dict[str, Any]:
     """
     Extract common kwargs shared by most Tortoise fields.
 
-    Maps null, unique, db_index, primary_key, source_field (when DB column
+    Maps null, primary_key, source_field (when DB column
     differs from field name), and default values.
+
+    Note: ``unique`` and ``db_index`` are intentionally NOT mapped.
+    The library relies on the existing Django-managed database schema,
+    so Tortoise-level index/unique declarations are unnecessary and can
+    cause errors (e.g. ``TextField`` does not support ``unique`` in Tortoise).
     """
     kwargs: dict[str, Any] = {}
     if field_info.null:
         kwargs["null"] = True
-    if field_info.unique:
-        kwargs["unique"] = True
-    if field_info.db_index:
-        kwargs["db_index"] = True
     if field_info.primary_key:
         kwargs["primary_key"] = True
     # Map db_column -> source_field

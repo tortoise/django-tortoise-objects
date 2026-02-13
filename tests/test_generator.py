@@ -5,10 +5,45 @@ Validates that ``generate_tortoise_model()`` creates valid Tortoise model
 classes from introspected Django model metadata.
 """
 
+import pytest
 from tortoise import models as tortoise_models
 
-from django_tortoise.generator import generate_tortoise_model
-from django_tortoise.introspection import ModelInfo, introspect_model
+from django_tortoise import generator
+from django_tortoise.generator import generate_tortoise_model, generate_tortoise_model_full
+from django_tortoise.introspection import FieldInfo, ModelInfo, introspect_model
+
+
+def _make_field_info(**overrides) -> FieldInfo:
+    """Helper to create FieldInfo with sensible defaults."""
+    defaults = dict(
+        name="test_field",
+        internal_type="CharField",
+        column="test_field",
+        primary_key=False,
+        null=False,
+        unique=False,
+        has_default=False,
+        default=None,
+        max_length=100,
+        max_digits=None,
+        decimal_places=None,
+        db_index=False,
+        choices=None,
+        enum_type=None,
+        is_relation=False,
+        related_model=None,
+        related_model_label=None,
+        on_delete=None,
+        related_name=None,
+        is_self_referential=False,
+        many_to_many=False,
+        through_model=None,
+        through_db_table=None,
+        is_auto_field=False,
+        django_field=None,
+    )
+    defaults.update(overrides)
+    return FieldInfo(**defaults)
 
 
 class TestGenerateBasicModel:
@@ -256,3 +291,51 @@ class TestUniqueTogetherPropagation:
         assert tortoise_model is not None
         assert hasattr(tortoise_model.Meta, "unique_together")
         assert ("a", "b") in tortoise_model.Meta.unique_together
+
+
+class TestModelCreationErrorContext:
+    """Errors during model creation include model/field context."""
+
+    @pytest.fixture()
+    def failing_model_info(self):
+        fi = _make_field_info(
+            name="id",
+            internal_type="AutoField",
+            column="id",
+            primary_key=True,
+            is_auto_field=True,
+            max_length=None,
+        )
+        return ModelInfo(
+            model_class=type("MyModel", (), {}),
+            app_label="myapp",
+            model_name="mymodel",
+            db_table="myapp_mymodel",
+            fields=[fi],
+            unique_together=[],
+            is_abstract=False,
+            is_proxy=False,
+            is_managed=True,
+            pk_name="id",
+        )
+
+    @pytest.fixture()
+    def patch_failing_model(self, monkeypatch):
+        """Replace tortoise_models.Model with a class whose metaclass raises."""
+
+        class FailingModel:
+            def __init_subclass__(cls, **kwargs):
+                raise RuntimeError("simulated metaclass error")
+
+        fake_module = type("FakeModule", (), {"Model": FailingModel})()
+        monkeypatch.setattr(generator, "tortoise_models", fake_module)
+
+    def test_error_includes_model_context(self, failing_model_info, patch_failing_model):
+        """When type() raises during model creation, the error includes model context."""
+        with pytest.raises(RuntimeError, match=r"myapp\.mymodel"):
+            generate_tortoise_model(failing_model_info)
+
+    def test_error_includes_model_context_full(self, failing_model_info, patch_failing_model):
+        """generate_tortoise_model_full() also includes model context on error."""
+        with pytest.raises(RuntimeError, match=r"myapp\.mymodel"):
+            generate_tortoise_model_full(failing_model_info)

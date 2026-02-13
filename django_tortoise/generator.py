@@ -57,14 +57,20 @@ def generate_tortoise_model(
     meta_class = _build_meta_class(model_info, tortoise_fields, tortoise_app_name)
     class_name = f"{model_info.model_class.__name__}Tortoise"
 
-    tortoise_model = type(
-        class_name,
-        (tortoise_models.Model,),
-        {
-            "Meta": meta_class,
-            **tortoise_fields,
-        },
-    )
+    try:
+        tortoise_model = type(
+            class_name,
+            (tortoise_models.Model,),
+            {
+                "Meta": meta_class,
+                **tortoise_fields,
+            },
+        )
+    except Exception as exc:
+        raise type(exc)(
+            f"Failed to create Tortoise model '{class_name}' for Django model "
+            f"'{model_info.app_label}.{model_info.model_name}': {exc}"
+        ) from exc
 
     logger.debug(
         "Generated Tortoise model '%s' for Django model '%s.%s' (table: %s, fields: %d)",
@@ -127,14 +133,20 @@ def generate_tortoise_model_full(
     meta_class = _build_meta_class(model_info, tortoise_fields, tortoise_app_name)
     class_name = f"{model_info.model_class.__name__}Tortoise"
 
-    tortoise_model = type(
-        class_name,
-        (tortoise_models.Model,),
-        {
-            "Meta": meta_class,
-            **tortoise_fields,
-        },
-    )
+    try:
+        tortoise_model = type(
+            class_name,
+            (tortoise_models.Model,),
+            {
+                "Meta": meta_class,
+                **tortoise_fields,
+            },
+        )
+    except Exception as exc:
+        raise type(exc)(
+            f"Failed to create Tortoise model '{class_name}' for Django model "
+            f"'{model_info.app_label}.{model_info.model_name}': {exc}"
+        ) from exc
 
     logger.debug(
         "Generated Tortoise model '%s' for Django model '%s.%s' "

@@ -63,14 +63,13 @@ def _common_kwargs_source(field_info: FieldInfo) -> dict[str, str]:
 
     Mirrors ``fields._common_kwargs()`` but returns source-code strings
     instead of runtime values.
+
+    Note: ``unique`` and ``db_index`` are intentionally NOT emitted.
+    The library relies on the existing Django-managed database schema.
     """
     kwargs: dict[str, str] = {}
     if field_info.null:
         kwargs["null"] = "True"
-    if field_info.unique:
-        kwargs["unique"] = "True"
-    if field_info.db_index:
-        kwargs["db_index"] = "True"
     if field_info.primary_key:
         kwargs["primary_key"] = "True"
     # source_field when column differs from name

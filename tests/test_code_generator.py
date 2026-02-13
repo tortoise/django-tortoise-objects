@@ -98,19 +98,29 @@ class _DummyComment:
 class TestCommonKwargsSource:
     """Tests for _common_kwargs_source."""
 
-    def test_null_and_unique(self):
-        """TC-1.1: produces correct kwargs for null, unique."""
-        info = _make_field_info(null=True, unique=True)
+    def test_null_kwarg(self):
+        """TC-1.1: produces correct kwargs for null."""
+        info = _make_field_info(null=True)
         result = _common_kwargs_source(info)
         assert result["null"] == "True"
-        assert result["unique"] == "True"
 
-    def test_db_index_and_primary_key(self):
-        """TC-1.1: produces correct kwargs for db_index, primary_key."""
-        info = _make_field_info(db_index=True, primary_key=True)
+    def test_unique_not_in_output(self):
+        """unique is not included in kwargs source (DB schema handles it)."""
+        info = _make_field_info(unique=True)
         result = _common_kwargs_source(info)
-        assert result["db_index"] == "True"
+        assert "unique" not in result
+
+    def test_primary_key_kwarg(self):
+        """TC-1.1: produces correct kwargs for primary_key."""
+        info = _make_field_info(primary_key=True)
+        result = _common_kwargs_source(info)
         assert result["primary_key"] == "True"
+
+    def test_db_index_not_in_output(self):
+        """db_index is not included in kwargs source (DB schema handles it)."""
+        info = _make_field_info(db_index=True)
+        result = _common_kwargs_source(info)
+        assert "db_index" not in result
 
     def test_simple_literal_default_int(self):
         """TC-1.2: handles int default."""

@@ -277,16 +277,17 @@ class TestCommonKwargs:
         result = convert_field(info)
         assert result.null is True
 
-    def test_unique_field(self):
+    def test_unique_not_mapped(self):
+        """unique is not mapped to Tortoise (DB schema handles it)."""
         info = _make_field_info(internal_type="IntegerField", unique=True)
         result = convert_field(info)
-        assert result.unique is True
+        assert result.unique is False
 
-    def test_db_index_field(self):
+    def test_db_index_not_mapped(self):
+        """db_index is not mapped to Tortoise (DB schema handles it)."""
         info = _make_field_info(internal_type="IntegerField", db_index=True)
         result = convert_field(info)
-        # Tortoise stores db_index as 'index' on the field instance
-        assert result.index is True
+        assert result.index is False
 
     def test_source_field_mapping(self):
         info = _make_field_info(
